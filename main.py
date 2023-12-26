@@ -24,13 +24,30 @@ def main():
     for param in alexnet.parameters():
         param.requires_grad = False
 
-    tmp_img = alexnet_preprocess(train_dataset[0][0])
+    class AlexDataset(torch.utils.data.Dataset):
+        def __init__(self, dataset):
+            super().__init__()
 
-    processed_tmp_img = alexnet.avgpool(alexnet.features(tmp_img))
-    processed_tmp_img = torch.flatten(processed_tmp_img)
+            self.data_list = dataset
+        
+        def __len__(self):
+            return len(self.data_list)
 
+        def  __getitem__(self, index):
+            img, y = self.data_list[index]
 
+            processed_img = alexnet.avgpool(alexnet.features(alexnet_preprocess(img)))
+            processed_img = torch.flatten(processed_img)
 
+            return processed_img, y
+    
+    alex_train_dataset = AlexDataset(train_dataset)
+    alex_test_dataset = AlexDataset(test_dataset)
+
+    alex_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=16, shuffle=True, drop_last=True)
+    alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=16, shuffle=True, drop_last=True)
+
+    
 
 if __name__ == '__main__':
     main()
