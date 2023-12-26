@@ -6,9 +6,29 @@ import numpy as np
 import torchvision
 
 import PIL
-
+import argparse
+import os
 
 ENCODED_VEC_SIZE_ALEXNET = 9216
+
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--seed', type=int, default=1004)
+parser.add_argument('--cpu', type=int, default=0)
+
+parser.add_argument('--batch-size', type=int, defualt=16)
+
+args = parser.parse_args()
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+
+class simpleHashModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+
+
 
 
 def main():
@@ -47,7 +67,7 @@ def main():
     alex_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=16, shuffle=True, drop_last=True)
     alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=16, shuffle=True, drop_last=True)
 
-    
+
 
 if __name__ == '__main__':
     main()
