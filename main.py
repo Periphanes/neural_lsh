@@ -9,6 +9,8 @@ import argparse
 import os
 import random
 
+from tqdm import tqdm
+
 ENCODED_VEC_SIZE_ALEXNET = 9216
 
 
@@ -35,6 +37,20 @@ if args.cpu or not torch.cuda.is_available():
     device = torch.device('cpu')
 else:
     device = torch.device('cuda')
+
+dsh_loss_margin = 2
+dsh_loss_alpha = 0.01
+
+def dsh_loss(output1, output2, y):
+    loss_sub = (torch.ones_like(y) - y) * torch.linalg.vector_norm(output1 - output2).item() / 2
+    loss_add = y * torch.max((dsh_loss_margin - torch.linalg.vector_norm(output1 - output2)), 0)[0] / 2
+    # loss_relax = dsh_loss_alpha * (torch.abs(output1 - torch.ones_like(output1)) + torch.abs(output2 - torch.ones_like(output2)))
+
+    # print(loss_sub)
+    # print(loss_add)
+    # print(loss_relax)
+
+    return loss_sub + loss_add # + loss_relax
 
 print("Device Used : ", device)
 args.device = device
@@ -99,7 +115,9 @@ def main():
     alexnet_weights = torchvision.models.AlexNet_Weights.IMAGENET1K_V1
     alexnet_preprocess = alexnet_weights.transforms()
 
-
+    model = simpleHashModel(args).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=1)
 
     for param in alexnet.parameters():
         param.requires_grad = False
@@ -127,7 +145,29 @@ def main():
     alex_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=16, shuffle=True, drop_last=True, collate_fn=collate_binary)
     alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=16, shuffle=True, drop_last=True, collate_fn=collate_binary)
 
-    for batch in alex_train_loader:
+    training_loss = []
+
+    for batch_idx, batch in enumerate(tqdm(alex_train_loader)):
+        train_x, train_y = batch
+        train_x1 = train_x[0,:,:].to(device)
+        train_x2 = train_x[1,:,:].to(device)
+        train_y = train_y.to(device)
+
+        optimizer.zero_grad()
+        output1 = model(train_x1).squeeze()
+        output2 = model(train_x2).squeeze()
+
+        loss = dsh_loss(output1, output2, train_y)
+        loss.backward()
+
+        nn.utils.clip_grad_norm_(model.parameters(), 5)
+        optimizer.step()
+        scheduler.step()
+
+        training_loss.append(loss.item())
+
+        print(loss.item())
+
 
 
 
