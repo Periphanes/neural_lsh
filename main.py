@@ -9,6 +9,8 @@ import argparse
 import os
 import random
 
+from sklearn.model_selection import train_test_split
+
 from tqdm import tqdm
 
 ENCODED_VEC_SIZE_ALEXNET = 9216
@@ -20,6 +22,8 @@ parser.add_argument('--seed', type=int, default=1004)
 parser.add_argument('--cpu', type=int, default=0)
 
 parser.add_argument('--batch-size', type=int, default=16)
+parser.add_argument('--epochs', type=int, default=50)
+parser.add_argument('--val-epoch', type=int, default=5)
 
 args = parser.parse_args()
 
@@ -111,6 +115,8 @@ def main():
         if data[1] == 0 or data[1] == 1:
             test_selected.append(data)
 
+    train_selected, validation_selected = train_test_split(train_dataset, test_size=0.2, random_state=args.seed)
+
     alexnet = torchvision.models.alexnet(weights = torchvision.models.AlexNet_Weights.IMAGENET1K_V1)
     alexnet_weights = torchvision.models.AlexNet_Weights.IMAGENET1K_V1
     alexnet_preprocess = alexnet_weights.transforms()
@@ -140,33 +146,57 @@ def main():
             return processed_img, y
     
     alex_train_dataset = AlexDataset(train_selected)
+    alex_val_dataset = AlexDataset(validation_selected)
     alex_test_dataset = AlexDataset(test_selected)
 
-    alex_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=16, shuffle=True, drop_last=True, collate_fn=collate_binary)
-    alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=16, shuffle=True, drop_last=True, collate_fn=collate_binary)
+    alex_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, collate_fn=collate_binary)
+    alex_val_loader = torch.utils.data.DataLoader(alex_val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, collate_fn=collate_binary)
+    alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True, collate_fn=collate_binary)
 
-    training_loss = []
+    pbar = tqdm(total=args.epochs, initial=0, bar_format="{desc:<5}{percentage:3.0f}%|{bar:10}{r_bar}")
 
-    for batch_idx, batch in enumerate(tqdm(alex_train_loader)):
-        train_x, train_y = batch
-        train_x1 = train_x[0,:,:].to(device)
-        train_x2 = train_x[1,:,:].to(device)
-        train_y = train_y.to(device)
+    for epoch_idx in range(args.epochs):
+        model.train()
+        training_loss = []
+        validation_loss = []
 
-        optimizer.zero_grad()
-        output1 = model(train_x1).squeeze()
-        output2 = model(train_x2).squeeze()
+        for batch_idx, batch in enumerate(alex_train_loader):
+            train_x, train_y = batch
+            train_x1 = train_x[0,:,:].to(device)
+            train_x2 = train_x[1,:,:].to(device)
+            train_y = train_y.to(device)
 
-        loss = dsh_loss(output1, output2, train_y)
-        loss.backward()
+            optimizer.zero_grad()
+            output1 = model(train_x1).squeeze()
+            output2 = model(train_x2).squeeze()
 
-        nn.utils.clip_grad_norm_(model.parameters(), 5)
-        optimizer.step()
-        scheduler.step()
+            loss = dsh_loss(output1, output2, train_y).sum()
+            loss.backward()
 
-        training_loss.append(loss.item())
+            nn.utils.clip_grad_norm_(model.parameters(), 5)
+            optimizer.step()
+            scheduler.step()
 
-        print(loss.item())
+            training_loss.append(loss.item())
+        
+        if epoch_idx % args.val_epoch == 0 and epoch_idx != 0:
+            model.eval()
+
+            validation_loss = []
+
+            for batch_idx, batch in enumerate(alex_val_loader):
+                val_x, val_y = batch
+                val_x1 = val_x[0,:,:].to(device)
+                val_x2 = val_x[1,:,:].to(device)
+                val_y = val_y.to(device)
+
+                output1 = model(train_x1).squeeze()
+                output2 = model(train_x2).squeeze()
+
+                loss = dsh_loss(output1, output2, train_y).sum()
+
+                validation_loss.append(loss.item())
+        
 
 
 
