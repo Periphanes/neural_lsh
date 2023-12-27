@@ -37,6 +37,30 @@ class simpleHashModel(nn.Module):
     
     def forward(self, x):
         return self.hash_func(x)
+    
+def collate_binary(data):
+    X_batch = []
+    y_batch = []
+
+    X_tmp = None
+    y_tmp = None
+
+    for id, data_point in enumerate(data):
+
+        if id % 2 == 0:
+            X_tmp = data_point[0]
+            y_tmp = data_point[1]
+        else:
+            if y_tmp == data_point[1]:
+                y_batch.append(1)
+            else:
+                y_batch.append(0)
+            X_batch.append(torch.stack((data_point[0], X_tmp)))
+    
+    X = torch.stack(X_batch).swapaxes(0, 1)
+    y = torch.tensor(y_batch)
+
+    return X, y
 
 def main():
     print("Program Started")
@@ -81,12 +105,11 @@ def main():
     alex_train_dataset = AlexDataset(train_selected)
     alex_test_dataset = AlexDataset(test_selected)
 
-    alex_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=16, shuffle=True, drop_last=True)
-    alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=16, shuffle=True, drop_last=True)
+    alex_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=16, shuffle=True, drop_last=True, collate_fn=collate_binary)
+    alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=16, shuffle=True, drop_last=True, collate_fn=collate_binary)
 
     for batch in alex_train_loader:
-        print(batch)
-        exit(0)
+        
 
 
 if __name__ == '__main__':
