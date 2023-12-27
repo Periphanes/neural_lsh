@@ -31,6 +31,14 @@ random.seed(args.seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+if args.cpu or not torch.cuda.is_available():
+    device = torch.device('cpu')
+else:
+    device = torch.device('cuda')
+
+print("Device Used : ", device)
+args.device = device
+
 class simpleHashModel(nn.Module):
     def __init__(self, args):
         super().__init__()
