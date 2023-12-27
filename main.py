@@ -7,6 +7,7 @@ import torchvision
 
 import argparse
 import os
+import random
 
 ENCODED_VEC_SIZE_ALEXNET = 9216
 
@@ -21,6 +22,14 @@ parser.add_argument('--batch-size', type=int, default=16)
 args = parser.parse_args()
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+
+torch.manual_seed(args.seed)
+torch.cuda.manual_seed_all(args.seed)
+np.random.seed(args.seed)
+random.seed(args.seed)
+
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 class simpleHashModel(nn.Module):
     def __init__(self, args):
@@ -82,6 +91,8 @@ def main():
     alexnet_weights = torchvision.models.AlexNet_Weights.IMAGENET1K_V1
     alexnet_preprocess = alexnet_weights.transforms()
 
+
+
     for param in alexnet.parameters():
         param.requires_grad = False
 
@@ -109,7 +120,7 @@ def main():
     alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=16, shuffle=True, drop_last=True, collate_fn=collate_binary)
 
     for batch in alex_train_loader:
-        
+
 
 
 if __name__ == '__main__':
