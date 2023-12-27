@@ -21,7 +21,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=1004)
 parser.add_argument('--cpu', type=int, default=0)
 
-parser.add_argument('--batch-size', type=int, default=16)
+parser.add_argument('--batch-size', type=int, default=64)
 parser.add_argument('--epochs', type=int, default=50)
 parser.add_argument('--val-epoch', type=int, default=5)
 
@@ -154,11 +154,15 @@ def main():
     alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True, collate_fn=collate_binary)
 
     pbar = tqdm(total=args.epochs, initial=0, bar_format="{desc:<5}{percentage:3.0f}%|{bar:10}{r_bar}")
+    epoch_pbar = tqdm(total=args.epochs, initial=0, bar_format="{desc:<5}{percentage:3.0f}%|{bar:10}{r_bar}")
+
+    validation_loss_lst = []
 
     for epoch_idx in range(args.epochs):
         model.train()
         training_loss = []
-        validation_loss = []
+
+        epoch_pbar.reset(len(train_selected) // (args.batch_size // 2))
 
         for batch_idx, batch in enumerate(alex_train_loader):
             train_x, train_y = batch
@@ -178,11 +182,24 @@ def main():
             scheduler.step()
 
             training_loss.append(loss.item())
+
+            if epoch_idx < args.val_epoch + 1:
+                pbar.set_description("Training Loss : " + str(sum(training_loss) / len(training_loss)))
+            else:
+                avg_validation_loss = sum(validation_loss) / len(validation_loss)
+                pbar.set_description("Training Loss : " + str(sum(training_loss) / len(training_loss)) + " / Val Loss : " + str(avg_validation_loss))
+
+            epoch_pbar.set_description("Training... ")
+            epoch_pbar.update(1)
+            
+            pbar.refresh()
         
         if epoch_idx % args.val_epoch == 0 and epoch_idx != 0:
             model.eval()
 
             validation_loss = []
+
+            epoch_pbar.reset(len(validation_selected) // (args.batch_size // 2))
 
             for batch_idx, batch in enumerate(alex_val_loader):
                 val_x, val_y = batch
@@ -196,10 +213,19 @@ def main():
                 loss = dsh_loss(output1, output2, train_y).sum()
 
                 validation_loss.append(loss.item())
+
+                true = torch.abs(output1.to(torch.long) - output2.to(torch.long))
+
+                epoch_pbar.set_description("Validating... ")
+                epoch_pbar.update(1)
+            
+            avg_validation_loss = sum(validation_loss) / len(validation_loss)
+            validation_loss_lst.append(avg_validation_loss)
+            
+            pbar.set_description("Training Loss : " + str(sum(training_loss) / len(training_loss)) + " / Val Loss : " + str(avg_validation_loss))
+            pbar.refresh()
         
-
-
-
+        pbar.update(1)
 
 if __name__ == '__main__':
     main()
