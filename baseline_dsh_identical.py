@@ -14,9 +14,6 @@ from sklearn.metrics import classification_report
 
 from tqdm import tqdm
 
-ENCODED_VEC_SIZE_ALEXNET = 9216
-
-
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, default=1004)
@@ -28,6 +25,7 @@ parser.add_argument('--val-epoch', type=int, default=5)
 
 parser.add_argument('--hamming-thresh', type=int, default=64)
 parser.add_argument('--band-length', type=int, default=16)
+parser.add_argument('--hash-sig-length', type=int, default=128)
 
 args = parser.parse_args()
 
@@ -65,15 +63,27 @@ class simpleHashModel(nn.Module):
         super().__init__()
 
         self.hash_func = nn.Sequential(
-            nn.Linear(ENCODED_VEC_SIZE_ALEXNET, 1024),
+            nn.Conv2d(3, 32, kernel_size=(5,5), stride=1, padding=3),
             nn.ReLU(),
-            nn.Linear(1024, 512),
+            nn.MaxPool2d(kernel_size=(3,3), stride=2),
+            nn.Conv2d(32,32, kernel_size=(5,5), stride=1, padding=3),
             nn.ReLU(),
-            nn.Linear(512, 128),
+            nn.AvgPool2d(kernel_size=(3,3), stride=2),
+            nn.Conv2d(32,64, kernel_size=(5,5), stride=1, padding=3),
+            nn.ReLU(),
+            nn.AvgPool2d(kernel_size=(3,3), stride=2),
+
+            nn.Flatten(),
+
+            nn.Linear(1024, 500),
+            nn.ReLU(),
+            nn.Linear(500, args.hash_sig_length)
         )
     
     def forward(self, x):
-        return self.hash_func(x)
+        ret = self.hash_func(x)
+
+        return ret
     
 def collate_binary(data):
     X_batch = []
@@ -110,23 +120,16 @@ def main():
 
     for data in train_dataset:
         if data[1] == 0 or data[1] == 1:
-            train_selected.append(data)
+            train_selected.append((torchvision.transforms.functional.pil_to_tensor(data[0]), data[1]))
     for data in test_dataset:
         if data[1] == 0 or data[1] == 1:
-            test_selected.append(data)
+            test_selected.append((torchvision.transforms.functional.pil_to_tensor(data[0]), data[1]))
 
     train_selected, validation_selected = train_test_split(train_selected, test_size=0.2, random_state=args.seed)
-
-    alexnet = torchvision.models.alexnet(weights = torchvision.models.AlexNet_Weights.IMAGENET1K_V1)
-    alexnet_weights = torchvision.models.AlexNet_Weights.IMAGENET1K_V1
-    alexnet_preprocess = alexnet_weights.transforms()
 
     model = simpleHashModel(args).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=1)
-
-    for param in alexnet.parameters():
-        param.requires_grad = False
 
     class AlexDataset(torch.utils.data.Dataset):
         def __init__(self, dataset):
@@ -140,13 +143,10 @@ def main():
         def  __getitem__(self, index):
             img, y = self.data_list[index]
 
-            processed_img = alexnet.avgpool(alexnet.features(alexnet_preprocess(img)))
-            processed_img = torch.flatten(processed_img)
-
-            return processed_img, y
+            return img, y
     
-    alex_train_dataset = AlexDataset(train_selected[:1000])
-    alex_val_dataset = AlexDataset(validation_selected[:1000])
+    alex_train_dataset = AlexDataset(train_selected)
+    alex_val_dataset = AlexDataset(validation_selected)
     alex_test_dataset = AlexDataset(test_selected)
 
     alex_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, collate_fn=collate_binary)
@@ -166,11 +166,12 @@ def main():
 
         for batch_idx, batch in enumerate(alex_train_loader):
             train_x, train_y = batch
-            train_x1 = train_x[0,:,:].to(device)
-            train_x2 = train_x[1,:,:].to(device)
+            train_x1 = train_x[0,:,:].float().to(device)
+            train_x2 = train_x[1,:,:].float().to(device)
             train_y = train_y.to(device)
 
             optimizer.zero_grad()
+
             output1 = model(train_x1).squeeze()
             output2 = model(train_x2).squeeze()
 
@@ -206,8 +207,8 @@ def main():
 
             for batch_idx, batch in enumerate(alex_val_loader):
                 val_x, val_y = batch
-                val_x1 = val_x[0,:,:].to(device)
-                val_x2 = val_x[1,:,:].to(device)
+                val_x1 = val_x[0,:,:].float().to(device)
+                val_x2 = val_x[1,:,:].float().to(device)
                 val_y = val_y.to(device)
 
                 output1 = model(val_x1).squeeze()
@@ -217,7 +218,7 @@ def main():
 
                 validation_loss.append(loss.item())
 
-                pred = (torch.count_nonzero((output1 >= 0).to(torch.long) - (output2 >= 0).to(torch.long), dim = 1) < (128 - args.hamming_thresh)).to(torch.long).cpu()
+                pred = (torch.count_nonzero((output1 >= 0).to(torch.long) - (output2 >= 0).to(torch.long), dim = 1) < (args.hash_sig_length - args.hamming_thresh)).to(torch.long).cpu()
 
                 validation_true = np.append(validation_true, val_y.cpu())
                 validation_pred = np.append(validation_pred, pred)
@@ -230,9 +231,6 @@ def main():
             
             pbar.set_description("Training Loss : " + str(sum(training_loss) / len(training_loss)) + " / Val Loss : " + str(avg_validation_loss))
             pbar.refresh()
-
-            # print(validation_pred)
-            # print(validation_true)
 
             print(classification_report(validation_true, validation_pred))
         

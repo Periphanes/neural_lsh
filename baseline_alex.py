@@ -59,7 +59,7 @@ def dsh_loss(output1, output2, y):
 
 print("Device Used : ", device)
 args.device = device
-
+    
 class simpleHashModel(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -74,7 +74,7 @@ class simpleHashModel(nn.Module):
     
     def forward(self, x):
         return self.hash_func(x)
-    
+
 def collate_binary(data):
     X_batch = []
     y_batch = []
