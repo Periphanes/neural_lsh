@@ -23,9 +23,9 @@ parser.add_argument('--batch-size', type=int, default=64)
 parser.add_argument('--epochs', type=int, default=50)
 parser.add_argument('--val-epoch', type=int, default=5)
 
-parser.add_argument('--hamming-thresh', type=int, default=64)
+parser.add_argument('--hamming-thresh', type=int, default=128)
 parser.add_argument('--band-length', type=int, default=16)
-parser.add_argument('--hash-sig-length', type=int, default=128)
+parser.add_argument('--hash-sig-length', type=int, default=256)
 
 args = parser.parse_args()
 
