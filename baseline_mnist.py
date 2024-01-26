@@ -23,6 +23,8 @@ parser.add_argument('--batch-size', type=int, default=64)
 parser.add_argument('--epochs', type=int, default=50)
 parser.add_argument('--val-epoch', type=int, default=5)
 
+parser.add_argument('--hamming-thresh', type=int, default=64)
+
 args = parser.parse_args()
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -46,13 +48,14 @@ dsh_loss_alpha = 0.01
 def dsh_loss(output1, output2, y):
     loss_sub = (torch.ones_like(y) - y) * torch.linalg.vector_norm(output1 - output2).item() / 2
     loss_add = y * torch.max((dsh_loss_margin - torch.linalg.vector_norm(output1 - output2)), 0)[0] / 2
-    # loss_relax = dsh_loss_alpha * (torch.abs(output1 - torch.ones_like(output1)) + torch.abs(output2 - torch.ones_like(output2)))
+    loss_relax = dsh_loss_alpha * (torch.linalg.vector_norm(torch.abs(output1) - torch.ones_like(output1), ord = 1)
+                                    + torch.linalg.vector_norm(torch.abs(output2) - torch.ones_like(output2), ord = 1))
 
     # print(loss_sub)
     # print(loss_add)
     # print(loss_relax)
 
-    return loss_sub + loss_add # + loss_relax
+    return loss_sub + loss_add + loss_relax
 
 print("Device Used : ", device)
 args.device = device
@@ -69,7 +72,6 @@ class simpleHashModel(nn.Module):
             nn.Linear(512, 128),
             nn.ReLU(),
             nn.Linear(128, 128),
-            nn.Sigmoid()
         )
     
     def forward(self, x):
@@ -109,10 +111,10 @@ def main():
     test_selected = []
 
     for data in train_dataset:
-        if data[1] == 0 or data[1] == 1:
+        if data[1] == 3 or data[1] == 7:
             train_selected.append((torchvision.transforms.functional.pil_to_tensor(data[0]), data[1]))
     for data in test_dataset:
-        if data[1] == 0 or data[1] == 1:
+        if data[1] == 3 or data[1] == 7:
             test_selected.append((torchvision.transforms.functional.pil_to_tensor(data[0]), data[1]))
 
     train_selected, validation_selected = train_test_split(train_selected, test_size=0.2, random_state=args.seed)
@@ -122,9 +124,6 @@ def main():
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=1)
 
     criterion = nn.BCELoss()
-
-    # for param in alexnet.parameters():
-    #     param.requires_grad = False
 
     class BasDataset(torch.utils.data.Dataset):
         def __init__(self, dataset):
@@ -146,9 +145,6 @@ def main():
     alex_val_loader = torch.utils.data.DataLoader(alex_val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, collate_fn=collate_binary)
     alex_test_loader = torch.utils.data.DataLoader(alex_test_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True, collate_fn=collate_binary)
 
-    # tmp_train_loader = torch.utils.data.DataLoader(alex_train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    # tmp_val_loader = torch.utils.data.DataLoader(alex_val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
-
     pbar = tqdm(total=args.epochs, initial=0, bar_format="{desc:<5}{percentage:3.0f}%|{bar:10}{r_bar}")
     epoch_pbar = tqdm(total=args.epochs, initial=0, bar_format="{desc:<5}{percentage:3.0f}%|{bar:10}{r_bar}")
 
@@ -159,71 +155,6 @@ def main():
         training_loss = []
 
         epoch_pbar.reset(len(train_selected) // (args.batch_size // 2))
-
-        # for batch_idx, batch in enumerate(tmp_train_loader):
-        #     train_x = batch[0].float().to(device)
-        #     train_y = batch[1].to(device)
-
-        #     optimizer.zero_grad()
-
-        #     output = model(train_x).squeeze()
-        #     loss = criterion(output, train_y)
-        #     loss.backward()
-
-        #     nn.utils.clip_grad_norm_(model.parameters(), 5)
-        #     optimizer.step()
-        #     scheduler.step()
-
-        #     training_loss.append(loss.item())
-        #     if epoch_idx < args.val_epoch + 1:
-        #         pbar.set_description("Training Loss : " + str(sum(training_loss) / len(training_loss)))
-        #     else:
-        #         avg_validation_loss = sum(validation_loss) / len(validation_loss)
-        #         pbar.set_description("Training Loss : " + str(sum(training_loss) / len(training_loss)) + " / Val Loss : " + str(avg_validation_loss))
-
-        #     epoch_pbar.set_description("Training... ")
-        #     epoch_pbar.update(1)
-            
-        #     pbar.refresh()
-
-        # if epoch_idx % args.val_epoch == 0 and epoch_idx != 0:
-        #     model.eval()
-
-        #     validation_loss = []
-
-        #     validation_true = np.array([])
-        #     validation_pred = np.array([])
-
-        #     epoch_pbar.reset(len(validation_selected) // (args.batch_size // 2))
-
-        #     for batch_idx, batch in enumerate(tmp_val_loader):
-        #         val_x = batch[0].to(torch.FloatTensor).to(device)
-        #         val_y = batch[1].to(device)
-
-        #         output = model(val_x).squeeze()
-        #         loss = criterion(output, val_y)
-
-        #         validation_loss.append(loss.item())
-
-        #         pred = torch.round(output).to(torch.long)
-                
-        #         validation_true = np.append(validation_true, val_y)
-        #         validation_pred = np.append(validation_pred, pred)
-
-        #         epoch_pbar.set_description("Validating... ")
-        #         epoch_pbar.update(1)
-            
-        #     avg_validation_loss = sum(validation_loss) / len(validation_loss)
-        #     validation_loss_lst.append(avg_validation_loss)
-            
-        #     pbar.set_description("Training Loss : " + str(sum(training_loss) / len(training_loss)) + " / Val Loss : " + str(avg_validation_loss))
-        #     pbar.refresh()
-
-        #     # print(validation_pred)
-        #     # print(validation_true)
-
-        #     print(classification_report(validation_true, validation_pred))   
-
 
         for batch_idx, batch in enumerate(alex_train_loader):
             train_x, train_y = batch
@@ -278,13 +209,10 @@ def main():
 
                 validation_loss.append(loss.item())
 
-                pred = torch.abs(torch.round(output1).to(torch.long) - torch.round(output2).to(torch.long))
-                pred = (torch.count_nonzero(pred, 1)>63).to(torch.long).numpy()
+                pred = (torch.count_nonzero((output1 >= 0).to(torch.long) - (output2 >= 0).to(torch.long), dim = 1) < (128 - args.hamming_thresh)).to(torch.long).cpu()
+                
 
-                # validation_true.append(val_y)
-                # validation_pred.append(pred)
-
-                validation_true = np.append(validation_true, val_y)
+                validation_true = np.append(validation_true, val_y.cpu())
                 validation_pred = np.append(validation_pred, pred)
 
                 epoch_pbar.set_description("Validating... ")
