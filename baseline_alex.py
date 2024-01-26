@@ -26,6 +26,9 @@ parser.add_argument('--batch-size', type=int, default=64)
 parser.add_argument('--epochs', type=int, default=50)
 parser.add_argument('--val-epoch', type=int, default=5)
 
+parser.add_argument('--hamming-thresh', type=int, default=64)
+parser.add_argument('--band-length', type=int, default=16)
+
 args = parser.parse_args()
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -49,13 +52,10 @@ dsh_loss_alpha = 0.01
 def dsh_loss(output1, output2, y):
     loss_sub = (torch.ones_like(y) - y) * torch.linalg.vector_norm(output1 - output2).item() / 2
     loss_add = y * torch.max((dsh_loss_margin - torch.linalg.vector_norm(output1 - output2)), 0)[0] / 2
-    # loss_relax = dsh_loss_alpha * (torch.abs(output1 - torch.ones_like(output1)) + torch.abs(output2 - torch.ones_like(output2)))
+    loss_relax = dsh_loss_alpha * (torch.linalg.vector_norm(torch.abs(output1) - torch.ones_like(output1), ord = 1)
+                                    + torch.linalg.vector_norm(torch.abs(output2) - torch.ones_like(output2), ord = 1))
 
-    # print(loss_sub)
-    # print(loss_add)
-    # print(loss_relax)
-
-    return loss_sub + loss_add # + loss_relax
+    return loss_sub + loss_add + loss_relax
 
 print("Device Used : ", device)
 args.device = device
@@ -70,7 +70,6 @@ class simpleHashModel(nn.Module):
             nn.Linear(1024, 512),
             nn.ReLU(),
             nn.Linear(512, 128),
-            nn.Sigmoid()
         )
     
     def forward(self, x):
@@ -218,13 +217,9 @@ def main():
 
                 validation_loss.append(loss.item())
 
-                pred = torch.abs(torch.round(output1).to(torch.long) - torch.round(output2).to(torch.long))
-                pred = (torch.count_nonzero(pred, 1)>63).to(torch.long).numpy()
+                pred = (torch.count_nonzero((output1 >= 0).to(torch.long) - (output2 >= 0).to(torch.long), dim = 1) < (128 - args.hamming_thresh)).to(torch.long).cpu()
 
-                # validation_true.append(val_y)
-                # validation_pred.append(pred)
-
-                validation_true = np.append(validation_true, val_y)
+                validation_true = np.append(validation_true, val_y.cpu())
                 validation_pred = np.append(validation_pred, pred)
 
                 epoch_pbar.set_description("Validating... ")

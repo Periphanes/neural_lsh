@@ -51,9 +51,6 @@ def dsh_loss(output1, output2, y):
     loss_relax = dsh_loss_alpha * (torch.linalg.vector_norm(torch.abs(output1) - torch.ones_like(output1), ord = 1)
                                     + torch.linalg.vector_norm(torch.abs(output2) - torch.ones_like(output2), ord = 1))
 
-    # print(loss_sub)
-    # print(loss_add)
-    # print(loss_relax)
 
     return loss_sub + loss_add + loss_relax
 
